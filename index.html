@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SIG-WIKA YOVANITA-11210051</title>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
+        #sidebar {
+            background-color: #2c2c2c;
+            color: white;
+            width: 400px;
+            height: 100vh;
+            float: left;
+            padding: 10px;
+            box-sizing: border-box;
+            position: relative;
+        }
+        #map {
+            height: 100vh;
+            margin-left: 400px;
+        }
+        input, select, button {
+            width: 90%;
+            margin: 5px 0;
+            padding: 5px;
+            background-color: rgb(128, 109, 75);
+            border: none;
+            color: black;
+        }
+        .daftar-lokasi {
+            color: rgb(227, 34, 34);
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .daftar-lokasi ul {
+            list-style: square;
+            padding-left: 15px;
+        }
+        .daftar-lokasi li {
+            cursor: pointer;
+        }
+        #autocompleteList {
+            max-height: 120px;
+            overflow-y: auto;
+            background: black;
+            color: rgb(27, 18, 152);
+            font-size: 14px;
+            position: absolute;
+            z-index: 1000;
+            width: 90%;
+            margin-left: 5px;
+        }
+        #autocompleteList div {
+            padding: 5px;
+            border-bottom: 1px dotted red;
+            cursor: pointer;
+        }
+        #autocompleteList div:hover {
+            background-color: orange;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <label>Ketik nama tempat</label><br>
+        <input type="text" id="inputNama" placeholder="Cari tempat..." oninput="filterAutocomplete()">
+        <div id="autocompleteList"></div><br>
+
+        <label>Ganti Jenis Peta</label><br>
+        <select id="mapType" onchange="changeMapType()">
+            <option value="roadmap">Peta Roadmap</option>
+            <option value="satellite">Peta Satelit</option>
+            <option value="hybrid">Peta Hybrid</option>
+            <option value="terrain">Peta Terrain</option>
+        </select><br>
+
+        <label>Koordinat X</label><br>
+        <input type="text" id="koorX" readonly><br>
+        <label>Koordinat Y</label><br>
+        <input type="text" id="koorY" readonly><br>
+        <label>Nama Lokasi</label><br>
+        <input type="text" id="namaLokasi"><br>
+        <button onclick="simpanLokasi()">Simpan</button>
+        <button onclick="koordinatAwal()">Koordinat Awal</button>
+
+        <div class="daftar-lokasi">
+            <ul id="daftarLokasi"></ul>
+        </div>
+
+        <div style="margin-top:20px;">
+            <label>Login</label><br>
+            <input type="text" placeholder="Username"><br>
+            <input type="password" placeholder="Password"><br>
+            <button>OK</button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        let map;
+        let marker;
+        let daftar = document.getElementById("daftarLokasi");
+        let semuaLokasi = [];
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: -7.3313, lng: 108.2336 },
+                zoom: 13,
+                mapTypeId: 'roadmap'
+            });
+
+            google.maps.event.addListener(map, 'click', function(event) {
+                let lat = event.latLng.lat();
+                let lng = event.latLng.lng();
+                document.getElementById("koorY").value = lat;
+                document.getElementById("koorX").value = lng;
+
+                if (marker) marker.setMap(null);
+                marker = new google.maps.Marker({
+                    position: event.latLng,
+                    map: map
+                });
+            });
+
+            muatLokasiDariCSV();
+        }
+
+        function changeMapType() {
+            const type = document.getElementById("mapType").value;
+            map.setMapTypeId(type);
+        }
+
+        function simpanLokasi() {
+            const nama = document.getElementById("namaLokasi").value.trim();
+            const x = document.getElementById("koorX").value;
+            const y = document.getElementById("koorY").value;
+
+            if (nama && x && y) {
+                fetch("simpan.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: `nama=${encodeURIComponent(nama)}&x=${x}&y=${y}`
+                })
+                .then(response => response.text())
+                .then(msg => {
+                    alert(msg);
+                    lokasiBaruKeDaftar(nama, parseFloat(x), parseFloat(y));
+                });
+            } else {
+                alert("Lengkapi semua isian!");
+            }
+        }
+
+        function lokasiBaruKeDaftar(nama, x, y) {
+            const li = document.createElement("li");
+            li.textContent = nama;
+            li.onclick = () => {
+                map.setCenter({ lat: y, lng: x });
+                map.setZoom(17);
+            };
+            daftar.appendChild(li);
+
+            new google.maps.Marker({
+                position: { lat: y, lng: x },
+                map: map,
+                title: nama
+            });
+        }
+
+        function koordinatAwal() {
+            map.setCenter({ lat: -7.3313, lng: 108.2336 });
+            map.setZoom(13);
+        }
+
+        function muatLokasiDariCSV() {
+            fetch("lokasi.csv")
+            .then(response => response.text())
+            .then(data => {
+                const lines = data.trim().split("\n").slice(1); // skip header
+                lines.forEach(line => {
+                    const [nama, x, y] = line.split(",");
+                    if (nama && x && y && !isNaN(x) && !isNaN(y)) {
+                        const lokasi = { nama: nama.trim(), x: parseFloat(x), y: parseFloat(y) };
+                        semuaLokasi.push(lokasi);
+                        lokasiBaruKeDaftar(lokasi.nama, lokasi.x, lokasi.y);
+                    }
+                });
+            });
+        }
+
+        function filterAutocomplete() {
+            const input = document.getElementById("inputNama").value.toLowerCase();
+            const box = document.getElementById("autocompleteList");
+            box.innerHTML = "";
+
+            if (!input) return;
+
+            const cocok = semuaLokasi.filter(loc => loc.nama.toLowerCase().includes(input));
+            cocok.slice(0, 10).forEach(loc => {
+                const div = document.createElement("div");
+                div.textContent = loc.nama;
+                div.onclick = () => {
+                    document.getElementById("inputNama").value = loc.nama;
+                    document.getElementById("koorX").value = loc.x;
+                    document.getElementById("koorY").value = loc.y;
+                    document.getElementById("namaLokasi").value = loc.nama;
+
+                    map.setCenter({ lat: loc.y, lng: loc.x });
+                    map.setZoom(17);
+
+                    if (marker) marker.setMap(null);
+                    marker = new google.maps.Marker({
+                        position: { lat: loc.y, lng: loc.x },
+                        map: map
+                    });
+
+                    box.innerHTML = "";
+                };
+                box.appendChild(div);
+            });
+        }
+    </script>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA0_xnLdDYtceNCLyK-fQkIZQR4d36iBZ8&callback=initMap" async defer></script>
+</body>
+</html>
